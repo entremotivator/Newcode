@@ -8,7 +8,7 @@ streamlit-option-menu==0.3.13
 # Data Processing & Analysis
 pandas==2.2.0
 numpy==1.26.3
-openpyxl==3.11.0
+openpyxl
 
 # Visualization
 plotly==5.18.0
@@ -27,7 +27,5 @@ google-auth==2.26.1
 google-auth-oauthlib==1.2.0
 google-auth-httplib2==0.2.0
 
-# Data Formats
-python-dotenv==1.0.0
 pyyaml==6.0.1
 toml==0.10.2
