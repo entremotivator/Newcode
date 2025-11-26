@@ -15,10 +15,6 @@ plotly==5.18.0
 matplotlib==3.8.2
 seaborn==0.13.0
 
-# API & Networking
-requests==2.31.0
-httpx==0.25.2
-aiohttp==3.9.1
 
 # Google Integration
 gspread==6.0.0
