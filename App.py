@@ -290,6 +290,8 @@ def initialize_session_state():
         st.session_state.last_gsheet_update = None
     if 'api_response_time' not in st.session_state:
         st.session_state.api_response_time = 0
+    if 'gcp_credentials' not in st.session_state:
+        st.session_state.gcp_credentials = None
 
 initialize_session_state()
 
@@ -305,61 +307,47 @@ def fetch_google_sheets_data() -> Optional[pd.DataFrame]:
         DataFrame with all generated codes and metadata, or None if fetch fails.
     """
     try:
-        # Define the scope for Google Sheets and Google Drive
+        if st.session_state.gcp_credentials is None:
+            st.error("""
+❌ Google Cloud credentials not loaded!
+
+Please upload your service account JSON file in the sidebar under "Google Sheets Configuration".
+
+To create a service account:
+1. Go to Google Cloud Console
+2. Create a new service account
+3. Download the JSON key file
+4. Share your Google Sheet with the service account email
+5. Upload the JSON file using the file uploader in the sidebar
+            """)
+            return None
+        
         scope = [
             'https://spreadsheets.google.com/feeds',
             'https://www.googleapis.com/auth/drive'
         ]
         
-        # Check if secrets are configured
-        if "gcp_service_account" not in st.secrets:
-            st.error("""
-### Google Sheets Configuration Required
-
-To connect to Google Sheets, you need to:
-
-1. Create a Google Cloud Project
-2. Enable Google Sheets API and Google Drive API
-3. Create a Service Account and download the JSON credentials
-4. Share your Google Sheet with the service account email
-5. Add the credentials to `.streamlit/secrets.toml`:
-
-```toml
-[gcp_service_account]
-type = "service_account"
-project_id = "your-project-id"
-private_key_id = "your-private-key-id"
-private_key = "-----BEGIN PRIVATE KEY-----\\n...\\n-----END PRIVATE KEY-----\\n"
-client_email = "your-service-account@your-project.iam.gserviceaccount.com"
-client_id = "your-client-id"
-auth_uri = "https://accounts.google.com/o/oauth2/auth"
-token_uri = "https://oauth2.googleapis.com/token"
-auth_provider_x509_cert_url = "https://www.googleapis.com/oauth2/v1/certs"
-client_x509_cert_url = "https://www.googleapis.com/robot/v1/metadata/x509/..."
-```            """)
-            return None
-        
-        # Create credentials from secrets
+        # Create credentials from the uploaded JSON
         creds = ServiceAccountCredentials.from_json_keyfile_dict(
-            st.secrets["gcp_service_account"],
+            st.session_state.gcp_credentials,
             scope
         )
         
         # Authorize and create client
         client = gspread.authorize(creds)
         
-        # Open the Google Sheet
+        # Open the Google Sheet by ID
         try:
             sheet = client.open_by_key(GOOGLE_SHEETS_ID)
         except gspread.exceptions.SpreadsheetNotFound:
-            st.error(f"Sheet with ID '{GOOGLE_SHEETS_ID}' not found. Make sure the sheet is shared with the service account email.")
+            st.error(f"❌ Sheet with ID '{GOOGLE_SHEETS_ID}' not found. Make sure the sheet is shared with the service account email: {st.session_state.gcp_credentials.get('client_email', 'N/A')}")
             return None
         
         # Get the specific worksheet
         try:
             worksheet = sheet.worksheet(GOOGLE_SHEETS_SHEET_NAME)
         except gspread.exceptions.WorksheetNotFound:
-            st.error(f"Worksheet '{GOOGLE_SHEETS_SHEET_NAME}' not found in the sheet.")
+            st.error(f"❌ Worksheet '{GOOGLE_SHEETS_SHEET_NAME}' not found in the sheet.")
             return None
         
         # Get all values from the worksheet
@@ -371,11 +359,11 @@ client_x509_cert_url = "https://www.googleapis.com/robot/v1/metadata/x509/..."
             st.session_state.last_gsheet_update = datetime.now()
             return df
         else:
-            st.info("The Google Sheet is empty or has no data rows.")
+            st.info("ℹ️ The Google Sheet is empty or has no data rows.")
             return None
     
     except Exception as e:
-        st.error(f"Error fetching Google Sheets data: {str(e)}")
+        st.error(f"❌ Error fetching Google Sheets data: {str(e)}")
         return None
 
 def send_to_n8n(user_input: str) -> Dict[str, Any]:
@@ -490,6 +478,30 @@ def get_code_statistics() -> Dict[str, Any]:
 with st.sidebar:
     st.markdown("---")
     st.markdown('<div class="sidebar-section"><div class="sidebar-title">🤖 AI Code Generator Hub</div></div>', unsafe_allow_html=True)
+    st.markdown("---")
+    
+    st.markdown('<div class="sidebar-title">🔑 Google Sheets Configuration</div>', unsafe_allow_html=True)
+    
+    uploaded_file = st.file_uploader(
+        "Upload Service Account JSON",
+        type=['json'],
+        help="Upload your Google Cloud service account credentials JSON file"
+    )
+    
+    if uploaded_file is not None:
+        try:
+            credentials = json.load(uploaded_file)
+            st.session_state.gcp_credentials = credentials
+            st.success(f"✅ Credentials loaded!")
+            st.info(f"Service account: {credentials.get('client_email', 'N/A')}")
+        except Exception as e:
+            st.error(f"❌ Error loading credentials: {str(e)}")
+    elif st.session_state.gcp_credentials is not None:
+        st.success(f"✅ Credentials loaded!")
+        st.info(f"Service account: {st.session_state.gcp_credentials.get('client_email', 'N/A')}")
+    else:
+        st.warning("⚠️ No credentials loaded. Upload JSON file to connect to Google Sheets.")
+    
     st.markdown("---")
     
     # Agent categories section
@@ -983,8 +995,8 @@ with tab3:
 with tab4:
     st.markdown("### 📥 Google Sheets Integration")
     
-    st.markdown(f"**Sheet ID:** `{GOOGLE_SHEETS_ID}`")
-    st.markdown(f"**Sheet Name:** `{GOOGLE_SHEETS_SHEET_NAME}`")
+    st.markdown("**Sheet ID:** `1eFZcnDoGT2NJHaEQSgxW5psN5kvlkYx1vtuXGRFTGTk`")
+    st.markdown("**Sheet Name:** `demo_examples`")
     
     col1, col2 = st.columns(2)
     
