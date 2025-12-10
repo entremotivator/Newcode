@@ -299,35 +299,83 @@ initialize_session_state()
 
 def fetch_google_sheets_data() -> Optional[pd.DataFrame]:
     """
-    Fetch all data from Google Sheets.
+    Fetch all data from Google Sheets using gspread.
     
     Returns:
         DataFrame with all generated codes and metadata, or None if fetch fails.
     """
     try:
-        # For demo purposes, we'll create sample data structure
-        # In production, use gspread library with OAuth2 credentials
-        sample_data = {
-            "Number": [],
-            "Title": [],
-            "Category": [],
-            "Description": [],
-            "Code": [],
-            "PDF_Enabled": [],
-            "Timestamp": [],
-            "Agent_Name": []
-        }
+        # Define the scope for Google Sheets and Google Drive
+        scope = [
+            'https://spreadsheets.google.com/feeds',
+            'https://www.googleapis.com/auth/drive'
+        ]
         
-        # Create DataFrame from sample data
-        df = pd.DataFrame(sample_data)
+        # Check if secrets are configured
+        if "gcp_service_account" not in st.secrets:
+            st.error("""
+### Google Sheets Configuration Required
+
+To connect to Google Sheets, you need to:
+
+1. Create a Google Cloud Project
+2. Enable Google Sheets API and Google Drive API
+3. Create a Service Account and download the JSON credentials
+4. Share your Google Sheet with the service account email
+5. Add the credentials to `.streamlit/secrets.toml`:
+
+```toml
+[gcp_service_account]
+type = "service_account"
+project_id = "your-project-id"
+private_key_id = "your-private-key-id"
+private_key = "-----BEGIN PRIVATE KEY-----\\n...\\n-----END PRIVATE KEY-----\\n"
+client_email = "your-service-account@your-project.iam.gserviceaccount.com"
+client_id = "your-client-id"
+auth_uri = "https://accounts.google.com/o/oauth2/auth"
+token_uri = "https://oauth2.googleapis.com/token"
+auth_provider_x509_cert_url = "https://www.googleapis.com/oauth2/v1/certs"
+client_x509_cert_url = "https://www.googleapis.com/robot/v1/metadata/x509/..."
+```            """)
+            return None
         
-        if len(df) > 0:
+        # Create credentials from secrets
+        creds = ServiceAccountCredentials.from_json_keyfile_dict(
+            st.secrets["gcp_service_account"],
+            scope
+        )
+        
+        # Authorize and create client
+        client = gspread.authorize(creds)
+        
+        # Open the Google Sheet
+        try:
+            sheet = client.open_by_key(GOOGLE_SHEETS_ID)
+        except gspread.exceptions.SpreadsheetNotFound:
+            st.error(f"Sheet with ID '{GOOGLE_SHEETS_ID}' not found. Make sure the sheet is shared with the service account email.")
+            return None
+        
+        # Get the specific worksheet
+        try:
+            worksheet = sheet.worksheet(GOOGLE_SHEETS_SHEET_NAME)
+        except gspread.exceptions.WorksheetNotFound:
+            st.error(f"Worksheet '{GOOGLE_SHEETS_SHEET_NAME}' not found in the sheet.")
+            return None
+        
+        # Get all values from the worksheet
+        data = worksheet.get_all_records()
+        
+        # Convert to DataFrame
+        if data:
+            df = pd.DataFrame(data)
             st.session_state.last_gsheet_update = datetime.now()
-        
-        return df if len(df) > 0 else None
+            return df
+        else:
+            st.info("The Google Sheet is empty or has no data rows.")
+            return None
     
     except Exception as e:
-        st.warning(f"Could not fetch Google Sheets data: {str(e)}")
+        st.error(f"Error fetching Google Sheets data: {str(e)}")
         return None
 
 def send_to_n8n(user_input: str) -> Dict[str, Any]:
@@ -515,7 +563,8 @@ with st.sidebar:
     if st.button("🔄 Refresh Sheet Data", use_container_width=True):
         with st.spinner("Fetching data..."):
             st.session_state.gsheet_data = fetch_google_sheets_data()
-            st.success("Data refreshed!")
+            if st.session_state.gsheet_data is not None:
+                st.success("Data refreshed!")
     
     if st.session_state.last_gsheet_update:
         st.caption(f"Last updated: {st.session_state.last_gsheet_update.strftime('%Y-%m-%d %H:%M:%S')}")
@@ -934,8 +983,8 @@ with tab3:
 with tab4:
     st.markdown("### 📥 Google Sheets Integration")
     
-    st.markdown("**Sheet ID:** `1eFZcnDoGT2NJHaEQSgxW5psN5kvlkYx1vtuXGRFTGTk`")
-    st.markdown("**Sheet Name:** `demo_examples`")
+    st.markdown(f"**Sheet ID:** `{GOOGLE_SHEETS_ID}`")
+    st.markdown(f"**Sheet Name:** `{GOOGLE_SHEETS_SHEET_NAME}`")
     
     col1, col2 = st.columns(2)
     
